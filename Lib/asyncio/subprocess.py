@@ -206,8 +206,8 @@ class Process:
 async def create_subprocess_shell(cmd, stdin=None, stdout=None, stderr=None,
                                   limit=streams._DEFAULT_LIMIT, **kwds):
     loop = events.get_running_loop()
-    protocol_factory = lambda: SubprocessStreamProtocol(limit=limit,
-                                                        loop=loop)
+    def protocol_factory():
+        return SubprocessStreamProtocol(limit=limit, loop=loop)
     transport, protocol = await loop.subprocess_shell(
         protocol_factory,
         cmd, stdin=stdin, stdout=stdout,
@@ -219,8 +219,8 @@ async def create_subprocess_exec(program, *args, stdin=None, stdout=None,
                                  stderr=None, limit=streams._DEFAULT_LIMIT,
                                  **kwds):
     loop = events.get_running_loop()
-    protocol_factory = lambda: SubprocessStreamProtocol(limit=limit,
-                                                        loop=loop)
+    def protocol_factory():
+        return SubprocessStreamProtocol(limit=limit, loop=loop)
     transport, protocol = await loop.subprocess_exec(
         protocol_factory,
         program, *args,
