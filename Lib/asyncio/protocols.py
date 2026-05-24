@@ -198,6 +198,7 @@ class SubprocessProtocol(BaseProtocol):
 
 
 def _feed_data_to_buffered_proto(proto, data):
+    data = memoryview(data)
     data_len = len(data)
     while data_len:
         buf = proto.get_buffer(data_len)
