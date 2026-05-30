@@ -210,6 +210,8 @@ def _feed_data_to_buffered_proto(proto, data):
             proto.buffer_updated(data_len)
             return
         else:
+            if not isinstance(data, memoryview):
+                data = memoryview(data)
             buf[:buf_len] = data[:buf_len]
             proto.buffer_updated(buf_len)
             data = data[buf_len:]
