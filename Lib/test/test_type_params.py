@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import textwrap
 import types
 import unittest
@@ -1411,3 +1412,30 @@ class DefaultsTest(unittest.TestCase):
 
         self.assertEqual(ns["X1"].__type_params__[0].__default__, "A")
         self.assertEqual(ns["X2"].__type_params__[0].__default__, "B")
+
+
+class TestEvaluateFunctions(unittest.TestCase):
+
+    def test_signature(self):
+        # gh-151665: the ".format" parameter of compiler-generated evaluators
+        # used to break inspect.signature(). It should show up as "format".
+        type Alias = int
+        def f[T: int = int, **P = int, *Ts = int](): pass
+        T, P, Ts = f.__type_params__
+        def g[T: (int, str)](): pass
+        T3, = g.__type_params__
+        cases = [
+            Alias.evaluate_value,
+            T.evaluate_bound,
+            T.evaluate_default,
+            P.evaluate_default,
+            Ts.evaluate_default,
+            T3.evaluate_constraints,
+        ]
+        for case in cases:
+            with self.subTest(case=case):
+                sig = inspect.signature(case)
+                self.assertEqual(str(sig), '(format=1, /)')
+                param, = sig.parameters.values()
+                self.assertEqual(param.name, 'format')
+                self.assertIs(param.kind, inspect.Parameter.POSITIONAL_ONLY)
