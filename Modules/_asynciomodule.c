@@ -2367,7 +2367,9 @@ _asyncio_Task___init___impl(TaskObj *self, PyObject *coro, PyObject *loop,
     }
     _PyThreadStateImpl *ts = (_PyThreadStateImpl *)_PyThreadState_GET();
 #ifdef Py_GIL_DISABLED
-    _PyObject_SetMaybeWeakref((PyObject *)task);
+    // This is required so that _Py_TryIncref(self)
+    // works correctly in non-owning threads.
+    _PyObject_SetMaybeWeakref((PyObject *)self);
 #endif
     if (eager_start) {
         PyObject *res = PyObject_CallMethodNoArgs(loop, &_Py_ID(is_running));
