@@ -366,6 +366,8 @@ class Semaphore(_ContextManagerMixin, mixins._LoopBoundMixin):
             raise ValueError("Semaphore initial value must be >= 0")
         self._waiters = None
         self._value = value
+        # Number of waiters woken by _wake_up_next() that have not yet resumed to acquire
+        self._wakeups = 0
 
     def __repr__(self):
         res = super().__repr__()
@@ -377,7 +379,7 @@ class Semaphore(_ContextManagerMixin, mixins._LoopBoundMixin):
     def locked(self):
         """Returns True if semaphore cannot be acquired immediately."""
         # Due to state, or FIFO rules (must allow others to run first).
-        return self._value == 0 or (
+        return self._value == 0 or self._wakeups > 0 or (
             any(not w.cancelled() for w in (self._waiters or ())))
 
     async def acquire(self):
@@ -403,7 +405,12 @@ class Semaphore(_ContextManagerMixin, mixins._LoopBoundMixin):
             try:
                 await fut
             finally:
-                self._waiters.remove(fut)
+                # _wake_up_next() already removed fut from _waiters if it was woken,
+                # so remove() may raise ValueError.
+                try:
+                    self._waiters.remove(fut)
+                except ValueError:
+                    pass
         except exceptions.CancelledError:
             # Currently the only exception designed be able to occur here.
             if fut.done() and not fut.cancelled():
@@ -411,8 +418,12 @@ class Semaphore(_ContextManagerMixin, mixins._LoopBoundMixin):
                 # but we are not about to successfully acquire(). Therefore we
                 # must undo the bookkeeping already done and attempt to wake
                 # up someone else.
+                self._wakeups -= 1
                 self._value += 1
             raise
+        else:
+            # We were woken up and are about to acquire, decrease the counter.
+            self._wakeups -= 1
 
         finally:
             # New waiters may have arrived but had to wait due to FIFO.
@@ -433,12 +444,11 @@ class Semaphore(_ContextManagerMixin, mixins._LoopBoundMixin):
 
     def _wake_up_next(self):
         """Wake up the first waiter that isn't done."""
-        if not self._waiters:
-            return False
-
-        for fut in self._waiters:
+        while self._waiters:
+            fut = self._waiters.popleft()
             if not fut.done():
                 self._value -= 1
+                self._wakeups += 1
                 fut.set_result(True)
                 # `fut` is now `done()` and not `cancelled()`.
                 return True

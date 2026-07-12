@@ -1241,9 +1241,10 @@ class SemaphoreTests(unittest.IsolatedAsyncioTestCase):
         t4 = None
 
         await asyncio.sleep(0)
-        # Three tasks are in the queue, the first hasn't woken up yet.
+        # Three tasks are waiting; the first was woken but hasn't resumed yet,
+        # so it is counted in _wakeups rather than sitting in _waiters.
         self.assertEqual(sem._value, 2)
-        self.assertEqual(len(sem._waiters), 3)
+        self.assertEqual(len(sem._waiters) + sem._wakeups, 3)
         await asyncio.sleep(0)
 
         tasks = [t1, t2, t3, t4]
