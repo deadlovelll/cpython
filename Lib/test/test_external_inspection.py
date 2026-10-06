@@ -216,12 +216,16 @@ skip_if_not_supported = unittest.skipIf(
 
 
 def _asyncio_in_subinterpreter(ready, release):
-    """Keep an asyncio task alive in a subinterpreter until released."""
+    """Park an asyncio task in a subinterpreter until released."""
     import asyncio
 
-    async def sub_worker():
+    def wait():
+        # Signalled from the thread, so the task is already parked
         ready.put(None)
-        await asyncio.to_thread(release.get)
+        release.get()
+
+    async def sub_worker():
+        await asyncio.to_thread(wait)
 
     asyncio.run(sub_worker())
 
@@ -523,18 +527,16 @@ class TestSelfStackTrace(RemoteInspectionTestBase):
                     task = asyncio.create_task(main_worker(),
                                                name="main_worker")
                     self.addCleanup(task.cancel)
-                    for _ in busy_retry(SHORT_TIMEOUT):
-                        await asyncio.sleep(0)
-                        if ready.empty():
-                            continue
-                        return [
-                            [frame.funcname.rpartition(".")[2]
-                             for frame in coro.call_stack]
-                            for info in RemoteUnwinder(
-                                os.getpid()).get_all_awaited_by()
-                            for task in info.awaited_by
-                            for coro in task.coroutine_stack
-                        ]
+                    await asyncio.sleep(0)
+                    ready.get(timeout=SHORT_TIMEOUT)
+                    return [
+                        [frame.funcname.rpartition(".")[2]
+                         for frame in coro.call_stack]
+                        for info in RemoteUnwinder(
+                            os.getpid()).get_all_awaited_by()
+                        for task in info.awaited_by
+                        for coro in task.coroutine_stack
+                    ]
                 finally:
                     release.put(None)
 
