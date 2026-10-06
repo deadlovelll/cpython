@@ -215,11 +215,13 @@ skip_if_not_supported = unittest.skipIf(
 )
 
 
-def _asyncio_in_subinterpreter():
+def _asyncio_in_subinterpreter(ready, release):
+    """Keep an asyncio task alive in a subinterpreter until released."""
     import asyncio
 
     async def sub_worker():
-        await asyncio.sleep(2)
+        ready.put(None)
+        await asyncio.to_thread(release.get)
 
     asyncio.run(sub_worker())
 
@@ -506,18 +508,23 @@ class TestSelfStackTrace(RemoteInspectionTestBase):
     @requires_subinterpreters
     def test_all_awaited_by_covers_every_interpreter(self):
         # gh-158880
+        ready = interpreters.create_queue()
+        release = interpreters.create_queue()
+
         async def main_worker():
             await asyncio.sleep(SHORT_TIMEOUT)
 
         async def main():
             with InterpreterPoolExecutor() as pool:
-                loop = asyncio.get_running_loop()
-                loop.run_in_executor(pool, _asyncio_in_subinterpreter)
-                task = asyncio.create_task(main_worker(), name="main_worker")
-                self.addCleanup(task.cancel)
-                for _ in busy_retry(SHORT_TIMEOUT):
-                    await asyncio.sleep(0)
-                    stacks = [
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.run_in_executor(pool, _asyncio_in_subinterpreter,
+                                         ready, release)
+                    task = asyncio.create_task(main_worker(),
+                                               name="main_worker")
+                    self.addCleanup(task.cancel)
+                    await asyncio.to_thread(ready.get)
+                    return [
                         [frame.funcname.rpartition(".")[2]
                          for frame in coro.call_stack]
                         for info in RemoteUnwinder(
@@ -525,11 +532,11 @@ class TestSelfStackTrace(RemoteInspectionTestBase):
                         for task in info.awaited_by
                         for coro in task.coroutine_stack
                     ]
-                    if ["sleep", "sub_worker"] in stacks:
-                        return stacks
+                finally:
+                    release.put(None)
 
         stacks = asyncio.run(main())
-        self.assertIn(["sleep", "sub_worker"], stacks)
+        self.assertIn(["to_thread", "sub_worker"], stacks)
         self.assertIn(["sleep", "main_worker"], stacks)
 
     @skip_if_not_supported
