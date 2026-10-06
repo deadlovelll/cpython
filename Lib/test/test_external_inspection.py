@@ -523,15 +523,18 @@ class TestSelfStackTrace(RemoteInspectionTestBase):
                     task = asyncio.create_task(main_worker(),
                                                name="main_worker")
                     self.addCleanup(task.cancel)
-                    await asyncio.to_thread(ready.get)
-                    return [
-                        [frame.funcname.rpartition(".")[2]
-                         for frame in coro.call_stack]
-                        for info in RemoteUnwinder(
-                            os.getpid()).get_all_awaited_by()
-                        for task in info.awaited_by
-                        for coro in task.coroutine_stack
-                    ]
+                    for _ in busy_retry(SHORT_TIMEOUT):
+                        await asyncio.sleep(0)
+                        if ready.empty():
+                            continue
+                        return [
+                            [frame.funcname.rpartition(".")[2]
+                             for frame in coro.call_stack]
+                            for info in RemoteUnwinder(
+                                os.getpid()).get_all_awaited_by()
+                            for task in info.awaited_by
+                            for coro in task.coroutine_stack
+                        ]
                 finally:
                     release.put(None)
 
