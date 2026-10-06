@@ -219,13 +219,13 @@ def _asyncio_in_subinterpreter(ready, release):
     """Park an asyncio task in a subinterpreter until released."""
     import asyncio
 
-    def wait():
-        # Signalled from the thread, so the task is already parked
-        ready.put(None)
+    def wait(loop):
+        # Signal via the loop, so the task has already suspended
+        loop.call_soon_threadsafe(ready.put, None)
         release.get()
 
     async def sub_worker():
-        await asyncio.to_thread(wait)
+        await asyncio.to_thread(wait, asyncio.get_running_loop())
 
     asyncio.run(sub_worker())
 
